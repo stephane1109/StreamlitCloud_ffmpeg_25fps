@@ -12,7 +12,7 @@ import zipfile
 import ffmpeg
 from yt_dlp import YoutubeDL
 from PIL import Image
-import imageio.v3 as iio
+import shutil
 
 # Fonction pour vider le cache
 def vider_cache():
@@ -21,53 +21,51 @@ def vider_cache():
 
 # Fonction pour définir un répertoire temporaire
 def definir_repertoire_travail_temporaire():
-    repertoire_temporaire = tempfile.mkdtemp()
-    st.write(f"Répertoire temporaire : {repertoire_temporaire}")
-    return repertoire_temporaire
+    return tempfile.mkdtemp()
 
-# Fonction pour télécharger la vidéo
+# Fonction pour télécharger la vidéo YouTube avec protection
 def telecharger_video(url, repertoire):
-    st.write("Téléchargement en cours...")
+    st.write("Téléchargement de la vidéo en cours...")
     ydl_opts = {
         'outtmpl': os.path.join(repertoire, '%(title)s.%(ext)s'),
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4',
         'merge_output_format': 'mp4',
         'noplaylist': True,
+        'quiet': True,
+        'no_warnings': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',  # Ajouter un user-agent classique
     }
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        video_title = info.get('title', 'video')
-        video_path = os.path.join(repertoire, f"{video_title}.mp4")
-    st.write(f"Téléchargement terminé : {video_path}")
-    return video_path, video_title
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            video_title = info.get('title', 'video')
+            video_path = os.path.join(repertoire, f"{video_title}.mp4")
+        return video_path, video_title, None
+    except Exception as e:
+        return None, None, str(e)
 
-# Fonction pour extraire les frames à 25fps
+# Fonction pour extraire des images à 25fps
 def extraire_images_25fps_intervalle(video_path, repertoire, debut, fin, video_title):
     images_repertoire = os.path.join(repertoire, f"images_25fps_{video_title}")
     os.makedirs(images_repertoire, exist_ok=True)
-    st.write(f"Extraction dans : {images_repertoire}")
+
+    output_pattern = os.path.join(images_repertoire, "image_%04d.jpg")
 
     try:
-        # Utilisation de ffmpeg-python pour extraire
-        output_pattern = os.path.join(images_repertoire, "image_%04d.jpg")
-
-        stream = (
+        (
             ffmpeg
             .input(video_path, ss=debut, t=(fin - debut))
             .filter('fps', fps=25)
             .filter('scale', 1920, 1080)
             .output(output_pattern, qscale=1)
             .overwrite_output()
+            .run()
         )
-        stream.run()
-
-        st.success(f"Images extraites dans : {images_repertoire}")
-        return images_repertoire
+        return images_repertoire, None
     except ffmpeg.Error as e:
-        st.error(f"Erreur FFmpeg : {e.stderr.decode()}")
-        return None
+        return None, e.stderr.decode()
 
-# Fonction pour créer un fichier ZIP
+# Fonction pour créer un zip
 def creer_zip_images(images_repertoire):
     zip_path = images_repertoire + ".zip"
     with zipfile.ZipFile(zip_path, 'w') as zipf:
@@ -78,27 +76,57 @@ def creer_zip_images(images_repertoire):
                 zipf.write(file_path, arcname)
     return zip_path
 
-# Interface utilisateur
-st.title("Extraction d'images YouTube à 25fps (Streamlit Cloud Compatible)")
+# Interface utilisateur Streamlit
+st.title("Extraction d'images YouTube à 25fps (Compatible Streamlit Cloud)")
+
+# Vider cache
+vider_cache()
+
+# Variables de session pour contrôler les étapes
+if 'video_path' not in st.session_state:
+    st.session_state['video_path'] = None
+if 'video_title' not in st.session_state:
+    st.session_state['video_title'] = None
+if 'repertoire_travail' not in st.session_state:
+    st.session_state['repertoire_travail'] = None
 
 url = st.text_input("Entrez l'URL de la vidéo YouTube :")
 
-col1, col2 = st.columns(2)
-debut = col1.number_input("Début (en secondes) :", min_value=0, value=0)
-fin = col2.number_input("Fin (en secondes) :", min_value=1, value=10)
+if st.button("Télécharger la vidéo"):
+    if url:
+        st.session_state['repertoire_travail'] = definir_repertoire_travail_temporaire()
+        video_path, video_title, erreur = telecharger_video(url, st.session_state['repertoire_travail'])
+        if erreur:
+            st.error(f"Erreur lors du téléchargement : {erreur}")
+        else:
+            st.success(f"Téléchargement réussi : {video_title}")
+            st.session_state['video_path'] = video_path
+            st.session_state['video_title'] = video_title
+    else:
+        st.error("Veuillez entrer une URL valide.")
 
-if url:
-    repertoire_travail = definir_repertoire_travail_temporaire()
-    video_path, video_title = telecharger_video(url, repertoire_travail)
+if st.session_state['video_path']:
+    st.markdown("---")
+    st.subheader("Paramètres d'extraction")
+    col1, col2 = st.columns(2)
+    debut = col1.number_input("Début (en secondes)", min_value=0, value=0)
+    fin = col2.number_input("Fin (en secondes)", min_value=1, value=10)
 
     if st.button("Extraire les images"):
         if debut >= fin:
-            st.error("Erreur : Début >= Fin")
+            st.error("Erreur : Le début doit être inférieur à la fin.")
         else:
-            images_repertoire = extraire_images_25fps_intervalle(
-                video_path, repertoire_travail, debut, fin, video_title
+            images_repertoire, erreur = extraire_images_25fps_intervalle(
+                st.session_state['video_path'],
+                st.session_state['repertoire_travail'],
+                debut,
+                fin,
+                st.session_state['video_title']
             )
-            if images_repertoire:
+            if erreur:
+                st.error(f"Erreur lors de l'extraction des images : {erreur}")
+            else:
+                st.success(f"Images extraites dans {images_repertoire}")
                 zip_path = creer_zip_images(images_repertoire)
                 with open(zip_path, "rb") as f:
                     st.download_button(
