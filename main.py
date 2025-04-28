@@ -5,8 +5,6 @@
 
 # pip install streamlit yt-dlp
 
-# pip install streamlit yt_dlp
-
 import streamlit as st
 import tempfile
 import os
