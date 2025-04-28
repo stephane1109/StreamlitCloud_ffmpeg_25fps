@@ -1,6 +1,6 @@
 streamlit
 yt-dlp
-moviepy
-Pillow
+ffmpeg-python
 imageio
 imageio-ffmpeg
+Pillow
