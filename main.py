@@ -3,14 +3,15 @@
 # wwww.codeandcortex.fr
 ########
 
-# pip install streamlit yt-dlp
-
+# ---------------- Imports ----------------
 import streamlit as st
 import tempfile
 import os
 import zipfile
 import subprocess
 from yt_dlp import YoutubeDL
+
+# ---------------- Fonctions ----------------
 
 # Fonction pour vider le cache
 def vider_cache():
@@ -23,6 +24,10 @@ def definir_repertoire_travail_temporaire():
 # Fonction pour télécharger une vidéo YouTube
 def telecharger_video(url, repertoire, cookies_path=None):
     st.write("Téléchargement de la vidéo en cours...")
+
+    # User-Agent Firefox fixé
+    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0"
+
     ydl_opts = {
         'outtmpl': os.path.join(repertoire, '%(title)s.%(ext)s'),
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4',
@@ -30,8 +35,9 @@ def telecharger_video(url, repertoire, cookies_path=None):
         'noplaylist': True,
         'quiet': True,
         'no_warnings': True,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        'user_agent': user_agent,
     }
+
     if cookies_path:
         ydl_opts['cookiefile'] = cookies_path
 
@@ -51,7 +57,7 @@ def extraire_ressources(video_path, repertoire, debut, fin, video_title, fps_cho
     try:
         ressources['video_complet'] = video_path
 
-        # Extraire audio complet
+        # Extraction audio complet
         mp3_path = os.path.join(repertoire, f"{video_title}.mp3")
         wav_path = os.path.join(repertoire, f"{video_title}.wav")
         subprocess.run(["ffmpeg", "-i", video_path, "-vn", "-acodec", "libmp3lame", "-q:a", "2", mp3_path], check=True)
@@ -59,12 +65,12 @@ def extraire_ressources(video_path, repertoire, debut, fin, video_title, fps_cho
         ressources['audio_mp3_complet'] = mp3_path
         ressources['audio_wav_complet'] = wav_path
 
-        # Extraire vidéo extrait
+        # Extraction vidéo extrait
         extrait_video_path = os.path.join(repertoire, f"{video_title}_extrait.mp4")
         subprocess.run(["ffmpeg", "-y", "-ss", str(debut), "-to", str(fin), "-i", video_path, "-c", "copy", extrait_video_path], check=True)
         ressources['video_extrait'] = extrait_video_path
 
-        # Extraire audio extrait
+        # Extraction audio extrait
         extrait_mp3_path = os.path.join(repertoire, f"{video_title}_extrait.mp3")
         extrait_wav_path = os.path.join(repertoire, f"{video_title}_extrait.wav")
         subprocess.run(["ffmpeg", "-y", "-ss", str(debut), "-to", str(fin), "-i", video_path, "-vn", "-acodec", "libmp3lame", "-q:a", "2", extrait_mp3_path], check=True)
@@ -72,7 +78,7 @@ def extraire_ressources(video_path, repertoire, debut, fin, video_title, fps_cho
         ressources['audio_mp3_extrait'] = extrait_mp3_path
         ressources['audio_wav_extrait'] = extrait_wav_path
 
-        # Extraire images
+        # Extraction images
         images_repertoire = os.path.join(repertoire, f"images_{fps_choice}fps_{video_title}")
         os.makedirs(images_repertoire, exist_ok=True)
         output_pattern = os.path.join(images_repertoire, "image_%04d.jpg")
@@ -113,7 +119,7 @@ def extraire_ressources(video_path, repertoire, debut, fin, video_title, fps_cho
     except Exception as e:
         return None, str(e)
 
-# Fonction pour créer un zip général
+# Fonction pour créer un zip général de toutes les ressources
 def creer_zip_global(ressources, repertoire):
     zip_path = os.path.join(repertoire, "ressources_completes.zip")
     with zipfile.ZipFile(zip_path, 'w') as zipf:
@@ -122,16 +128,12 @@ def creer_zip_global(ressources, repertoire):
                 zipf.write(chemin, os.path.basename(chemin))
     return zip_path
 
-# ---------- Interface utilisateur Streamlit ----------
+# ---------------- Interface utilisateur ----------------
 
-st.title("Extraction multimédia (mp4 - mp3 - wav - images) depuis une url de YouTube")
-
-# Ajout du site web
+st.title("Extraction multimédia (mp4 - mp3 - wav - images) depuis YouTube")
 st.markdown("**[www.codeandcortex.fr](http://www.codeandcortex.fr)**")
 
-# Explication claire pour l'utilisateur
 st.markdown("""
-
 ➡ Entrez une URL YouTube.  
 ➡ **Renseignez votre fichier cookies.txt** (optionnel) : fonctionne sans... tant que YouTube ne le demande pas.  
 ➡ Le script téléchargera la **vidéo complète** au format .mp4  
@@ -139,15 +141,15 @@ st.markdown("""
 - L'audio complet (.mp3 et .wav)
 - Un extrait vidéo (.mp4 selon l'intervalle défini)
 - Un extrait audio (.mp3 et .wav)
-- Des images extraites (au choix 1 image/sec ou 25 images/sec) sur l'intervalle ou toutes les images de la vidéo
+- Des images extraites (1 ou 25 fps, toute la vidéo ou intervalle)
 
 Enfin, vous pourrez télécharger toutes les ressources dans un seul fichier ZIP.
 """)
 
-# Vider cache au démarrage
+# Nettoyage du cache au démarrage
 vider_cache()
 
-# Session Streamlit
+# Initialiser la session Streamlit
 if 'video_path' not in st.session_state:
     st.session_state['video_path'] = None
 if 'video_title' not in st.session_state:
@@ -155,16 +157,15 @@ if 'video_title' not in st.session_state:
 if 'repertoire_travail' not in st.session_state:
     st.session_state['repertoire_travail'] = None
 
-# URL de la vidéo
+# Entrée URL
 url = st.text_input("Entrez l'URL de la vidéo YouTube :")
-
-# Upload fichier cookies.txt
 cookies_file = st.file_uploader("Uploader votre fichier cookies.txt (optionnel)", type=["txt"])
 
-# Bouton téléchargement
+# Téléchargement vidéo
 if st.button("Télécharger la vidéo"):
     if url:
         st.session_state['repertoire_travail'] = definir_repertoire_travail_temporaire()
+
         cookies_path = None
         if cookies_file:
             cookies_temp_path = os.path.join(st.session_state['repertoire_travail'], "cookies.txt")
@@ -172,16 +173,18 @@ if st.button("Télécharger la vidéo"):
                 f.write(cookies_file.read())
             cookies_path = cookies_temp_path
 
-        video_path, video_title, erreur = telecharger_video(url, st.session_state['repertoire_travail'], cookies_path)
+        video_path, video_title, erreur = telecharger_video(url, st.session_state['repertoire_travail'], cookies_path=cookies_path)
 
         if erreur:
-            st.error(f"Erreur téléchargement : {erreur}")
+            st.error(f"Erreur lors du téléchargement : {erreur}")
         else:
             st.success(f"Téléchargement réussi : {video_title}")
             st.session_state['video_path'] = video_path
             st.session_state['video_title'] = video_title
+    else:
+        st.error("Veuillez entrer une URL valide.")
 
-# Extraction après téléchargement
+# Extraction des ressources
 if st.session_state['video_path']:
     st.markdown("---")
     st.subheader("Lecture de la vidéo téléchargée")
@@ -222,4 +225,3 @@ if st.session_state['video_path']:
                     file_name="ressources_completes.zip",
                     mime="application/zip"
                 )
-
