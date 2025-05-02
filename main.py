@@ -1,5 +1,5 @@
 ########
-# Extraction multimédia - en local
+# Extraction multimédia mp4 - mp3 - wav - images (1fps - 25fps) - en local
 # wwww.codeandcortex.fr
 ########
 
